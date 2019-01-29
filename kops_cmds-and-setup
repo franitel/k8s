@@ -1,0 +1,285 @@
+kops
+
+Preparing kops install
+
+Start new VM with Vagrant
+
+vagrant ssh to login
+
+Download the kops software
+--------------------------
+github.com/kubernetes/kops
+
+sudo chmod =X kops-linux-amd64
+Move the file to /usr/local/bin/
+
+ sudo my kops-linux-amd64 /usr/local/bin
+
+Download python pip
+-------------------
+sudo apt-get install python-pip
+
+Install AWS Command Line utility
+--------------------------------
+sudo pip install awscli
+
+Test by typing "aws"
+ look for the usage error  and help suggestion...
+
+Create an AWS Account
+---------------------
+
+Goto AWS IAM - Identity and access management.
+Users > Create new user call it kops
+ permission= Programmatic access
+
+Generate Access key
+Copy the key
+
+Go back to shell of VM:
+----------------------
+
+AWS configure
+Will ask for access
+and secret key (both printed when creating the user)
+
+aws configure
+AWS Access Key ID [****************QBWA]:
+AWS Secret Access Key [****************nYMX]:
+Default region name [None]:
+Default output format [None]:
+
+
+
+total 16K
+drwxrwxr-x 2 ubuntu ubuntu 4.0K Dec 11 19:49 .
+drwxr-xr-x 8 ubuntu ubuntu 4.0K Dec 17 23:35 ..
+-rw------- 1 ubuntu ubuntu   10 Dec 11 19:49 config
+-rw------- 1 ubuntu ubuntu  116 Dec 11 19:49 credentials
+
+Give Kops user permission... choose Admin so it has all roles/permissions
+--------------------------
+
+IAM > Users > kops
+attach the admin access policy.
+
+Goto S3 in AWS
+
+Create a bucket
+---------------
+kops-state-<randomstring>
+in region us-east-1 (a = availability zone)
+
+Next set up Rt53 DNS domain...
+
+Enter subdomain in kops
+must create zone in Rt53 to manage the subdomain.  dig NS dev.example.com1
+
+
+set up access permissions? set to public in order to get kops cluster to work?
+-Yes set the S3 bucket I had to change the permission on the S3 bucket to open public access
+List objects and Write objects to everyone.
+- This probably means the KOPS user has to be added to the bucket. Experiment later.
+ ################
+The process in the videos doesn't work well as AWS has added additional safeguards.
+  - The key for me was to create a admin user WITH console access.
+  - Then use the kops instructions at: https://github.com/kubernetes/kops/blob/master/docs/aws.md
+Why ??? Because you need the canoncial user id:
+https://docs.aws.amazon.com/general/latest/gr/acct-identifiers.html
+To view your canonical user ID as an IAM user (CLI)
+
+You can use the list-buckets command with your IAM user credentials to return the
+AWS account owner ID, which is the canonical user ID. For more information,
+see s3api list-buckets in the AWS Command Line Interface Reference.
+
+Setting up the key pair:
+https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-key-pairs.html
+Launching and Connecting to Your Instance
+
+<QUOTE> When you launch an instance, you should specify the name of the key pair you plan
+to use to connect to the instance.
+> If you don't specify the name of an existing key pair when you launch an instance,
+you won't be able to connect to the instance. When you connect to the instance,
+you must specify the private key that corresponds to the key pair you specified
+when you launched the instance.
+
+Testing your DNS setup
+
+Follow instructions in kops page...
+
+You should now able to dig your domain (or subdomain) and see the AWS Name Servers on the other end.
+ (If your primary domain is hosted OUTSIDE of Route 53 then it can take about 24 hours to replicate.)
+dig ns subdomain.example.com
+
+dig ns kubernetes.jbrent.info
+
+
+; <<>> DiG 9.10.3-P4-Ubuntu <<>> ns kubernetes.jbrent.info
+;; global options: +cmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 36834
+;; flags: qr rd ra; QUERY: 1, ANSWER: 4, AUTHORITY: 0, ADDITIONAL: 5
+
+;; OPT PSEUDOSECTION:
+; etc...
+
+;; ANSWER SECTION:
+kubernetes.jbrent.info.
+etc...
+
+;; ADDITIONAL SECTION:
+ns-373.awsdns-46.com.
+etc...
+
+;; Query time: 2 msec
+;; SERVER: 10.0.2.3#53(10.0.2.3)
+;; WHEN: Sat Feb 03 03:44:32 UTC 2018
+;; MSG SIZE  rcvd: 255
+
+
+aws s3api create-bucket \
+    --bucket jbrent-info-example-com-state-store \
+    --region us-east-1
+
+An error occurred (AuthorizationHeaderMalformed) when calling the CreateBucket operation:
+The authorization header is malformed; the authorization component "Credential=export AWS_ACCESS_KEY_ID
+=$(aws configure get aws_access_key_id)/20180203/us-east-1/s3/aws4_request" is malformed.
+
+-- this means that your kops user is not the default user...
+ - must delete via console and rebuild the user
+
+aws configure list
+      Name                    Value             Type    Location
+      ----                    -----             ----    --------
+output here... profile value is blank
+ To use the kops user correctly you should create a SSH key pair:
+
+
+
+===================
+kops create cluster --name=kubernetes.jbrent.info --state=s3://kops-state-ran0mstring1 --zones=us-east-1a --node-count=2 --node-size=t2.micro --master-size=t2.micro --dns-zone=kubernetes.jbrent.info
+
+
+Suggestions:
+ * list clusters with: kops get cluster
+ * edit this cluster with: kops edit cluster kubernetes.jbrent.info
+ * edit your node instance group: kops edit ig --name=kubernetes.jbrent.info nodes
+ * edit your master instance group: kops edit ig --name=kubernetes.jbrent.info master-us-east-1a
+
+Finally configure your cluster with: kops update cluster kubernetes.jbrent.info --yes
+
+kops edit cluster kubernetes.jbrent.info   because it is on S3 this won't work.
+When set up correctly (and has  a variable) this works:
+kops edit cluster ${NAME}
+
+State Store: Required value: Please set the --state flag or export KOPS_STATE_STORE.
+A valid value follows the format s3://<bucket>.
+A s3 bucket is required to store cluster state information.
+
+kops edit cluster kubernetes.jbrent.info --state=s3://kops-state-ran0mstring1
+
+To start the cluster:
+---------------------
+
+kops update cluster kubernetes.jbrent.info --yes  --state=s3://kops-state-ran0mstring1
+
+Results:
+--------
+kops has set your kubectl context to kubernetes.jbrent.info
+
+Cluster is starting.  It should be ready in a few minutes.
+
+Suggestions:
+ * validate cluster: kops validate cluster
+ * list nodes: kubectl get nodes --show-labels
+ * ssh to the master: ssh -i ~/.ssh/id_rsa admin@api.kubernetes.jbrent.info
+The admin user is specific to Debian. If not using Debian please use the appropriate user based on your OS.
+ * read about installing addons: https://github.com/kubernetes/kops/blob/master/docs/addons.md
+
+kops validate cluster  --state=s3://kops-state-ran0mstring1
+
+
+cat ~/.kube/config
+results:
+
+server: https://api.kubernetes.jbrent.info
+  name: kubernetes.jbrent.info
+contexts:
+- context:
+    cluster: kubernetes.jbrent.info
+    user: kubernetes.jbrent.info
+  name: kubernetes.jbrent.info
+current-context: kubernetes.jbrent.info
+kind: Config
+preferences: {}
+
+users:
+- name: kubernetes.jbrent.info
+  user:
+truncated
+password: ZZVSbrqoifxmFl0SKvXgurgSHOLk60I3
+   username: admin
+- name: kubernetes.jbrent.info-basic-auth
+ user:
+   as-user-extra: {}
+   password: ZZVSbrqoifxmFl0SKvXgurgSHOLk60I3
+   username: admin
+
+
+=================================
+   run the minikube program
+
+   kubectl run hello-minikube --image=gcr.io/google_containers/echoserver:1.4 --port=8080
+
+   elastic load balancers in next lecture.
+
+   kubectl expose deployment hello-minikube --type=NodePort
+
+   ubuntu@ubuntu-xenial:~$ kubectl expose deployment hello-minikube --type=NodePort
+   service "hello-minikube" exposed
+   ubuntu@ubuntu-xenial:~$ kubectl get service
+   NAME             TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)          AGE
+   hello-minikube   NodePort    100.64.72.66   <none>        8080:32575/TCP   33s
+   kubernetes       ClusterIP   100.64.0.1     <none>        443/TCP          19m
+   ubuntu@ubuntu-xenial:~$
+
+   now if you want to access this application directly without the load balancer
+   you have to open port 32474/tcp in the firewall
+   goto vpc manage in AWS .. home > vpc
+
+   api.kubernetes.jbrent.info:32575
+
+   works...
+   CLIENT VALUES:
+   client_address=172.20.34.97
+   command=GET
+   real path=/
+   query=nil
+   request_version=1.1
+   request_uri=http://api.kubernetes.jbrent.info:8080/
+
+   SERVER VALUES:
+   server_version=nginx: 1.10.0 - lua: 10001
+
+   HEADERS RECEIVED:
+   accept=text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+   accept-encoding=gzip, deflate
+   accept-language=en-us
+   connection=keep-alive
+   host=api.kubernetes.jbrent.info:32575
+   upgrade-insecure-requests=1
+   user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/603.3.8 (KHTML, like Gecko) Version/10.1.2 Safari/603.3.8
+   BODY:
+   -no body in request-
+
+   Delete the resources so you don't pay for them
+   ----------------------------------------------
+   kops delete cluster --name kubernetes.jbrent.info  --state=s3://kops-state-ran0mstring1 --yes
+
+
+
+Research this entry in the creation process:
+--------------------------------------------
+kops create cluster --name=$NAME  --state=$KOPS_STATE_STORE   --zones=us-east-1a --node-count=3 --node-size=t2.medium --master-size=t2.micro --dns-zone=$DNS_ZONE --yes
+I0204 00:19:46.631373    3714 create_cluster.go:439] Inferred --cloud=aws from zone "us-east-1a"
+I0204 00:19:46.632104    3714 create_cluster.go:971] Using SSH public key: /home/ubuntu/.ssh/id_rsa.pub
